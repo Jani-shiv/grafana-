@@ -1,0 +1,14 @@
+{
+  "name": "stellarmind-observability-stack",
+  "version": "1.0.0",
+  "description": "Production-oriented Prometheus and Grafana monitoring stack for a Node.js app.",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "prom-client": "^15.1.3"
+  }
+}

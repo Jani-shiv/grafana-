@@ -1,0 +1,22 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 2h
+  receiver: app-webhook
+
+receivers:
+  - name: app-webhook
+    webhook_configs:
+      - url: http://node-app:3000/alerts
+        send_resolved: true
+
+inhibit_rules:
+  - source_matchers:
+      - severity = critical
+    target_matchers:
+      - severity = warning
+    equal: ['alertname', 'cluster', 'service']

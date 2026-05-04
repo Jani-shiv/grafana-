@@ -1,0 +1,29 @@
+groups:
+  - name: observability-rules
+    rules:
+      - alert: HighCpuUsage
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High CPU usage on {{ $labels.instance }}
+          description: CPU usage has stayed above 80 percent for 5 minutes.
+
+      - alert: HighErrorRate
+        expr: sum(rate(http_errors_total[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 1) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High HTTP error rate
+          description: More than 5 percent of requests are failing.
+
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: High request latency
+          description: The 95th percentile request duration is above 500 ms.

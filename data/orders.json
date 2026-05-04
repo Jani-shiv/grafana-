@@ -1,0 +1,32 @@
+[
+  {
+    "id": "e3e3e639-4519-49ff-a02c-85a89256a137",
+    "items": [
+      {
+        "productId": "p1001",
+        "name": "Core Hoodie",
+        "quantity": 1,
+        "priceCents": 4900,
+        "lineTotalCents": 4900
+      }
+    ],
+    "totalCents": 4900,
+    "total": "$49.00",
+    "createdAt": "2026-05-04T07:02:30.970Z"
+  },
+  {
+    "id": "87be8f4c-b052-4c45-afee-51b0a875c7f7",
+    "items": [
+      {
+        "productId": "p1002",
+        "name": "Signal Mug",
+        "quantity": 2,
+        "priceCents": 1800,
+        "lineTotalCents": 3600
+      }
+    ],
+    "totalCents": 3600,
+    "total": "$36.00",
+    "createdAt": "2026-05-04T07:01:06.544Z"
+  }
+]
