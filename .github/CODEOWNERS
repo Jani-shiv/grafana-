@@ -1,0 +1,27 @@
+# Code ownership and review requirements
+
+# GitHub repository files
+.github/ @Jani-shiv
+
+# Application code
+app.js @Jani-shiv
+
+# Infrastructure & Deployment
+Dockerfile @Jani-shiv
+docker-compose.yml @Jani-shiv
+prometheus/ @Jani-shiv
+grafana/ @Jani-shiv
+alertmanager/ @Jani-shiv
+azure/ @Jani-shiv
+
+# Security & Configuration
+.eslintrc.json @Jani-shiv
+.prettierrc.json @Jani-shiv
+jest.config.json @Jani-shiv
+
+# Documentation
+README.md @Jani-shiv
+CHANGELOG.md @Jani-shiv
+
+# Default fallback
+* @Jani-shiv

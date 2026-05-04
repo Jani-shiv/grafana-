@@ -1,0 +1,162 @@
+################################################################################
+# CI/CD WORKFLOW: Code Quality & Testing
+# Runs on every push and pull request
+# Tests, lints, and validates the codebase
+################################################################################
+
+name: CI - Code Quality & Testing
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'app.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ci.yml'
+      - 'tests/**'
+      - '.eslintrc.json'
+  pull_request:
+    branches: [ main, master, develop ]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ============================================================================
+  # Job 1: Lint Code
+  # ============================================================================
+  lint:
+    name: 🔍 Lint & Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: 📦 Install dependencies
+        run: npm ci
+      
+      - name: 🔍 Run ESLint
+        run: npm run lint
+        continue-on-error: false
+      
+      - name: 📄 Check code formatting
+        run: npx prettier --check .
+        continue-on-error: true
+
+  # ============================================================================
+  # Job 2: Run Unit Tests
+  # ============================================================================
+  test:
+    name: ✅ Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: 📦 Install dependencies
+        run: npm ci
+      
+      - name: ✅ Run tests
+        run: npm test -- --coverage
+      
+      - name: 📊 Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  # ============================================================================
+  # Job 3: Security Audit
+  # ============================================================================
+  security:
+    name: 🔒 Security Audit
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: 🔒 Run npm audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+      
+      - name: 🔐 Run Snyk security scan
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+        continue-on-error: true
+
+  # ============================================================================
+  # Job 4: Build & Validate
+  # ============================================================================
+  build:
+    name: 🏗️ Build Validation
+    runs-on: ubuntu-latest
+    needs: [ lint, test ]
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: 📦 Install dependencies
+        run: npm ci --omit=dev
+      
+      - name: ✔️ Validate Node.js syntax
+        run: node --check app.js
+      
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: 🏗️ Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: stellarmind:${{ github.sha }}
+
+  # ============================================================================
+  # Job 5: Notify on Success
+  # ============================================================================
+  notify-success:
+    name: ✨ Notify Success
+    runs-on: ubuntu-latest
+    needs: [ lint, test, security, build ]
+    if: success()
+    
+    steps:
+      - name: 📢 Success notification
+        run: |
+          echo "✅ All CI checks passed!"
+          echo "Commit: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref }}"

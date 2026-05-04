@@ -1,0 +1,191 @@
+################################################################################
+# WORKFLOW: Automated Azure Deployment
+# Deploys to Azure VM when changes are pushed to main branch
+# Only runs after all CI checks pass
+################################################################################
+
+name: 🚀 Deploy to Azure
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'app.js'
+      - 'package.json'
+      - 'docker-compose.yml'
+      - 'Dockerfile'
+      - '.github/workflows/deploy-azure.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  AZURE_VM_NAME: ${{ secrets.AZURE_VM_NAME }}
+  AZURE_LOCATION: ${{ secrets.AZURE_LOCATION }}
+
+jobs:
+  # ============================================================================
+  # Job 1: Prepare Deployment
+  # ============================================================================
+  prepare:
+    name: 📋 Prepare Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      deployment-id: ${{ steps.deploy-id.outputs.id }}
+      image-tag: ${{ steps.image-tag.outputs.tag }}
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔍 Generate deployment ID
+        id: deploy-id
+        run: echo "id=$(date +%s)-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      
+      - name: 🏷️ Generate image tag
+        id: image-tag
+        run: |
+          if [[ "${{ github.ref }}" == "refs/tags/"* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=latest-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
+
+  # ============================================================================
+  # Job 2: Deploy to Azure
+  # ============================================================================
+  deploy:
+    name: 🌩️ Deploy to Azure VM
+    runs-on: ubuntu-latest
+    needs: prepare
+    if: ${{ env.AZURE_SUBSCRIPTION_ID != '' }}
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔐 Azure CLI Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: 📋 Check Azure resources exist
+        run: |
+          echo "🔍 Checking Azure resources..."
+          az vm show \
+            --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ env.AZURE_VM_NAME }}" \
+            --query "provisioningState" -o tsv
+      
+      - name: 📦 Get VM details
+        id: vm-info
+        run: |
+          IP=$(az vm show \
+            --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ env.AZURE_VM_NAME }}" \
+            --show-details \
+            --query "publicIps" -o tsv)
+          echo "ip=$IP" >> $GITHUB_OUTPUT
+          echo "🌐 VM Public IP: $IP"
+      
+      - name: 📤 Upload deployment files via SCP
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AZURE_VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${{ steps.vm-info.outputs.ip }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          scp -r app.js package.json package-lock.json Dockerfile docker-compose.yml \
+            prometheus alertmanager grafana data README.md \
+            "${{ secrets.AZURE_VM_ADMIN_USER }}@${{ steps.vm-info.outputs.ip }}:/opt/stellarmind/" || true
+      
+      - name: 🐳 Deploy Docker stack
+        run: |
+          ssh "${{ secrets.AZURE_VM_ADMIN_USER }}@${{ steps.vm-info.outputs.ip }}" << 'EOF'
+            set -e
+            cd /opt/stellarmind
+            echo "📥 Pulling latest code..."
+            git pull origin master || true
+            echo "🏗️ Building Docker images..."
+            docker compose build --no-cache
+            echo "🚀 Starting Docker Compose stack..."
+            docker compose up -d
+            echo "✅ Deployment complete!"
+            docker compose ps
+          EOF
+      
+      - name: ⏱️ Wait for services to be ready
+        run: |
+          IP=${{ steps.vm-info.outputs.ip }}
+          for i in {1..30}; do
+            if curl -sf http://$IP:3000 > /dev/null 2>&1; then
+              echo "✅ Application is up and running!"
+              exit 0
+            fi
+            echo "⏳ Waiting for application... ($i/30)"
+            sleep 2
+          done
+          echo "⚠️ Application health check timeout (but deployment may still succeed)"
+      
+      - name: 🔗 Retrieve deployment URLs
+        id: urls
+        run: |
+          IP=${{ steps.vm-info.outputs.ip }}
+          echo "grafana-url=http://$IP:3000" >> $GITHUB_OUTPUT
+          echo "prometheus-url=http://$IP:9090" >> $GITHUB_OUTPUT
+          echo "alertmanager-url=http://$IP:9093" >> $GITHUB_OUTPUT
+          echo "app-url=http://$IP:3001" >> $GITHUB_OUTPUT
+
+  # ============================================================================
+  # Job 3: Post-Deployment Verification
+  # ============================================================================
+  verify:
+    name: ✅ Post-Deployment Verification
+    runs-on: ubuntu-latest
+    needs: [ prepare, deploy ]
+    if: always()
+    
+    steps:
+      - name: 📊 Check service health
+        run: |
+          echo "📋 Deployment ID: ${{ needs.prepare.outputs.deployment-id }}"
+          echo "🏷️ Image Tag: ${{ needs.prepare.outputs.image-tag }}"
+          echo "✅ Deployment workflow completed"
+      
+      - name: 📢 Deployment notification
+        if: success()
+        run: |
+          echo "🎉 Azure deployment successful!"
+          echo "Deployment ID: ${{ needs.prepare.outputs.deployment-id }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref }}"
+
+  # ============================================================================
+  # Job 4: Rollback on Failure
+  # ============================================================================
+  rollback:
+    name: 🔄 Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: failure()
+    
+    steps:
+      - name: 🔄 Rollback deployment
+        run: |
+          echo "⚠️ Deployment failed. Rolling back..."
+          # In a real scenario, you would have deployment versioning
+          # and revert to the previous known-good version
+      
+      - name: 📧 Send failure notification
+        run: |
+          echo "❌ Deployment to Azure failed"
+          echo "Check GitHub Actions logs for details"

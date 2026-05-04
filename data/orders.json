@@ -1,5 +1,20 @@
 [
   {
+    "id": "0a023bef-2f0c-4031-9ff3-024f71e60743",
+    "items": [
+      {
+        "productId": "p1003",
+        "name": "Latency Notebook",
+        "quantity": 3,
+        "priceCents": 2500,
+        "lineTotalCents": 7500
+      }
+    ],
+    "totalCents": 7500,
+    "total": "$75.00",
+    "createdAt": "2026-05-04T07:19:58.561Z"
+  },
+  {
     "id": "e3e3e639-4519-49ff-a02c-85a89256a137",
     "items": [
       {

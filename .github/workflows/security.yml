@@ -1,0 +1,158 @@
+################################################################################
+# WORKFLOW: Security & Dependency Scanning
+# Runs daily and on push to detect vulnerabilities
+# Scans code, dependencies, and container images
+################################################################################
+
+name: 🔒 Security Scanning
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # ============================================================================
+  # Job 1: Dependency Check
+  # ============================================================================
+  dependency-check:
+    name: 🔍 Dependency Security Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: 📦 Install dependencies
+        run: npm ci
+      
+      - name: 🔍 Run npm audit
+        run: npm audit --audit-level=moderate || true
+      
+      - name: 📊 Generate npm audit report
+        run: npm audit --json > audit-report.json || true
+      
+      - name: 📤 Upload audit report
+        uses: actions/upload-artifact@v3
+        with:
+          name: npm-audit-report
+          path: audit-report.json
+
+  # ============================================================================
+  # Job 2: CodeQL Analysis
+  # ============================================================================
+  codeql:
+    name: 🔐 CodeQL Analysis
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        language: [ 'javascript' ]
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔐 Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: ${{ matrix.language }}
+      
+      - name: 🔍 Autobuild
+        uses: github/codeql-action/autobuild@v2
+      
+      - name: 🔐 Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+  # ============================================================================
+  # Job 3: Container Image Scanning
+  # ============================================================================
+  container-scan:
+    name: 🐳 Container Image Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🏗️ Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: stellarmind:${{ github.sha }}
+          outputs: type=docker,dest=/tmp/image.tar
+      
+      - name: 📤 Load image
+        run: docker load --input /tmp/image.tar
+      
+      - name: 🔍 Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'stellarmind:${{ github.sha }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+      
+      - name: 📤 Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+        if: always()
+
+  # ============================================================================
+  # Job 4: SAST (Static Application Security Testing)
+  # ============================================================================
+  sast:
+    name: 🛡️ Static Application Security Testing
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: 📦 Install ESLint Security Plugin
+        run: npm install --save-dev eslint-plugin-security
+      
+      - name: 🛡️ Run security linting
+        run: npx eslint app.js --plugin security
+        continue-on-error: true
+
+  # ============================================================================
+  # Job 5: Checkov Infrastructure Scanning
+  # ============================================================================
+  infrastructure-scan:
+    name: 🏗️ Infrastructure as Code Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔍 Run Checkov scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: dockerfile,yaml
+          quiet: false
+          soft_fail: true
+          output_format: cli

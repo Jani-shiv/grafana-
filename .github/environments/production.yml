@@ -1,0 +1,22 @@
+name: "🌩️ Production"
+description: "Production environment deployment configuration"
+url: "https://stellarmind.example.com"
+protection_rules:
+  - required_status_checks:
+      strict: true
+      contexts:
+        - "ci (20)"
+        - "lint"
+        - "test"
+        - "security"
+  - required_pull_request_reviews:
+      dismissal_restrictions: {}
+      require_code_owner_reviews: true
+      require_last_commit_approval: true
+  - restrict_deployments:
+      environments:
+        - "Staging"
+  - require_deployment_to_be_approved_by: ["@Jani-shiv"]
+  - allowed_deployment_branches:
+      - "main"
+      - "master"

@@ -1,7 +1,76 @@
+
+# Dependencies
 node_modules/
 package-lock.json
-*.log
+npm-debug.log
+yarn.lock
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
-prometheus-data/
-grafana-data/
-alertmanager-data/
+
+# Build & Dist
+dist/
+build/
+coverage/
+.nyc_output/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Testing
+.jest-cache
+coverage
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+
+# Azure
+azure/*.tfstate
+azure/*.tfstate.*
+azure/.terraform/
+azure/.terraform.lock.hcl
+
+# Git
+.git/
+.gitignore
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.bak
+*.swp
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# CI/CD
+.github/workflows/secrets
+artifacts/

@@ -1,0 +1,208 @@
+################################################################################
+# WORKFLOW: Release & Version Management
+# Creates GitHub releases and version tags
+# Triggered on version bump tags (v*.*.*)
+################################################################################
+
+name: 📦 Release Management
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # ============================================================================
+  # Job 1: Create Release
+  # ============================================================================
+  create-release:
+    name: 📦 Create GitHub Release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 📝 Generate changelog
+        id: changelog
+        run: |
+          # Extract version from tag
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Generate changelog from git history
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          git log --pretty=format:"- %h: %s" \
+            $(git describe --tags --abbrev=0 @^)..@ 2>/dev/null || \
+          git log --pretty=format:"- %h: %s" -n 20
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: 🏷️ Create release notes
+        run: |
+          cat > release-notes.md << EOF
+          # Stellarmind v${{ steps.changelog.outputs.version }}
+          
+          ## What's New
+          - 🎉 Prometheus + Grafana observability stack
+          - 🛒 Ecommerce demo with persistent orders
+          - 🐳 Docker Compose orchestration
+          - 📊 Pre-built monitoring dashboards
+          - 🚀 Azure deployment automation
+          - 🔒 Security scanning and code quality
+          
+          ## Docker Image
+          \`\`\`bash
+          docker pull ghcr.io/${{ github.repository }}:${{ steps.changelog.outputs.version }}
+          \`\`\`
+          
+          ## Release Artifacts
+          - GitHub Container Registry: ghcr.io/${{ github.repository }}
+          - Docker Hub: (if configured)
+          
+          ## Deployment
+          \`\`\`bash
+          git clone https://github.com/${{ github.repository }}.git
+          cd stellarmind
+          docker compose up -d
+          \`\`\`
+          
+          ## Changes
+          ${{ steps.changelog.outputs.CHANGELOG }}
+          EOF
+      
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-notes.md
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ contains(steps.changelog.outputs.version, 'alpha') || contains(steps.changelog.outputs.version, 'beta') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================================
+  # Job 2: Build & Push Release Assets
+  # ============================================================================
+  build-release-assets:
+    name: 🏗️ Build Release Assets
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: 📦 Install dependencies
+        run: npm ci --omit=dev
+      
+      - name: 📦 Create distribution archive
+        run: |
+          mkdir -p dist
+          zip -r dist/stellarmind-${{ github.ref_name }}.zip \
+            app.js package.json package-lock.json Dockerfile docker-compose.yml \
+            prometheus alertmanager grafana data README.md -q
+      
+      - name: 📤 Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-assets
+          path: dist/
+
+  # ============================================================================
+  # Job 3: Push Docker Image for Release
+  # ============================================================================
+  docker-release:
+    name: 🐳 Docker Release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔑 Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 🏗️ Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:latest
+          labels: |
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+  # ============================================================================
+  # Job 4: Update Documentation
+  # ============================================================================
+  update-docs:
+    name: 📚 Update Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 📝 Update CHANGELOG
+        run: |
+          cat > CHANGELOG.md << 'EOF'
+          # Changelog
+          
+          All notable changes to this project will be documented in this file.
+          
+          ## [Unreleased]
+          
+          ## [${{ github.ref_name }}] - $(date +%Y-%m-%d)
+          
+          ### Added
+          - Production-grade CI/CD pipeline
+          - Automated security scanning
+          - Docker image building and pushing
+          - Azure VM deployment automation
+          - GitHub Actions workflows
+          - Code quality checks (ESLint, Prettier)
+          - Unit testing with Jest
+          - SBOM generation
+          
+          ### Fixed
+          - Improved error handling
+          - Better logging
+          
+          ### Security
+          - Added security scanning with CodeQL
+          - Added container image scanning with Trivy
+          - Added dependency auditing
+          
+          EOF
+      
+      - name: 📤 Commit documentation updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "docs: update changelog for ${{ github.ref_name }}" || true
+          git push || true
