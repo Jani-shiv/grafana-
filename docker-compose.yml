@@ -1,83 +1,68 @@
 services:
-  node-app:
+  backend:
     build: .
-    container_name: stellarmind-node-app
-    ports:
-      - "3001:3000"
-    volumes:
-      - ./data:/usr/src/app/data
+    container_name: backend
     environment:
       PORT: 3000
-      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: appdb
+      DB_USER: appuser
+      DB_PASSWORD: apppassword
+    ports:
+      - "3000:3000"
     depends_on:
-      - prometheus
-      - alertmanager
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_DB: appdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppassword
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:v3.4.0
-    container_name: stellarmind-prometheus
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.enable-lifecycle"
+    container_name: prometheus
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./prometheus/alert_rules.yml:/etc/prometheus/rules/alert_rules.yml:ro
-      - prometheus-data:/prometheus
     ports:
       - "9090:9090"
     depends_on:
-      - node-app
-      - node-exporter
-      - alertmanager
-    restart: unless-stopped
-
-  alertmanager:
-    image: prom/alertmanager:v0.28.1
-    container_name: stellarmind-alertmanager
-    command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
-      - "--storage.path=/alertmanager"
-    volumes:
-      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - alertmanager-data:/alertmanager
-    ports:
-      - "9093:9093"
-    depends_on:
-      - node-app
+      - backend
     restart: unless-stopped
 
   grafana:
     image: grafana/grafana-oss:11.6.1
-    container_name: stellarmind-grafana
+    container_name: grafana
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_AUTH_ANONYMOUS_ENABLED: "false"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "3001:3000"
     depends_on:
       - prometheus
     restart: unless-stopped
 
-  node-exporter:
-    image: prom/node-exporter:v1.9.1
-    container_name: stellarmind-node-exporter
-    command:
-      - "--path.rootfs=/host"
-    volumes:
-      - /:/host:ro,rslave
-    ports:
-      - "9100:9100"
-    restart: unless-stopped
-
 volumes:
-  prometheus-data:
+  postgres-data:
   grafana-data:
-  alertmanager-data:

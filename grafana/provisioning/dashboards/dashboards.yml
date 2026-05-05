@@ -1,7 +1,7 @@
 apiVersion: 1
 
 providers:
-  - name: Observability
+  - name: Backend Monitoring
     orgId: 1
     folder: Monitoring
     type: file
